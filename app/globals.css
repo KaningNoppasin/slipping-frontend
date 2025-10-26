@@ -119,4 +119,21 @@
   body {
     @apply bg-background text-foreground;
   }
+  :root {
+    /* Chart colors */
+    --chart-1: 12 76% 61%;      /* Orange/Red for Transfer */
+    --chart-2: 142 76% 36%;     /* Green for Payment */
+    --chart-3: 197 37% 24%;     /* Blue for Refund */
+    --chart-4: 43 74% 66%;      /* Yellow for Withdrawal */
+    --chart-5: 27 87% 67%;      /* Pink for Deposit */
+  }
+ 
+  .dark {
+    /* Dark mode chart colors */
+    --chart-1: 12 76% 61%;
+    --chart-2: 142 76% 36%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
 }

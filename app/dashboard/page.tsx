@@ -28,6 +28,8 @@ import {
 import { StatsCard } from "@/components/dashboard/stats-card";
 import { RecentTransactionsList } from "@/components/dashboard/recent-transactions-list";
 import { TransactionsTable } from "@/components/dashboard/transactions-table";
+import { TransactionChart } from "@/components/dashboard/transaction-chart";
+import { TransactionPieChart } from "@/components/dashboard/transaction-pie-chart";
 import { toast } from "sonner";
 
 // TypeScript interfaces
@@ -77,7 +79,12 @@ interface Metrics {
     transactionsByType: Record<string, number>;
 }
 
-// Helper function to format currency
+interface ChartData {
+    type: string;
+    count: number;
+    percentage: number;
+}
+
 const formatCurrency = (amount: number, currencyCode: string = "USD") => {
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
@@ -89,12 +96,12 @@ export default function DashboardPage() {
     const sidebar = useStore(useSidebar, (x) => x);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [metrics, setMetrics] = useState<Metrics | null>(null);
+    const [chartData, setChartData] = useState<ChartData[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
 
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8090/api/v1';
 
-    // Calculate metrics from transactions
     const calculateMetrics = (transactionData: Transaction[]): Metrics => {
         const totalTransactions = transactionData.length;
         const totalVolume = transactionData.reduce((sum, t) => sum + t.total_amount, 0);
@@ -119,7 +126,14 @@ export default function DashboardPage() {
         };
     };
 
-    // Fetch transactions from API
+    const prepareChartData = (transactionsByType: Record<string, number>, total: number): ChartData[] => {
+        return Object.entries(transactionsByType).map(([type, count]) => ({
+            type: type.charAt(0).toUpperCase() + type.slice(1),
+            count,
+            percentage: parseFloat(((count / total) * 100).toFixed(1)),
+        }));
+    };
+
     const fetchDashboardData = async () => {
         setLoading(true);
         setError(null);
@@ -129,7 +143,7 @@ export default function DashboardPage() {
                 `${API_BASE_URL}/transactions`,
                 {
                     params: {
-                        limit: 5,
+                        limit: 10,
                         offset: 0,
                     },
                     headers: {
@@ -142,6 +156,12 @@ export default function DashboardPage() {
                 setTransactions(response.data.data);
                 const calculatedMetrics = calculateMetrics(response.data.data);
                 setMetrics(calculatedMetrics);
+
+                const preparedChartData = prepareChartData(
+                    calculatedMetrics.transactionsByType,
+                    calculatedMetrics.totalTransactions
+                );
+                setChartData(preparedChartData);
             } else {
                 throw new Error(response.data.message || 'Failed to fetch dashboard data');
             }
@@ -157,22 +177,18 @@ export default function DashboardPage() {
         }
     };
 
-    // Initial fetch on component mount
     useEffect(() => {
         fetchDashboardData();
 
-        // Optional: Set up auto-refresh every 30 seconds
         const interval = setInterval(() => {
             fetchDashboardData();
         }, 30000);
 
-        // Cleanup interval on unmount
         return () => clearInterval(interval);
     }, []);
 
     if (!sidebar) return null;
 
-    // Loading state
     if (loading && !metrics) {
         return (
             <ContentLayout title="Dashboard">
@@ -184,7 +200,6 @@ export default function DashboardPage() {
         );
     }
 
-    // Error state
     if (error && !metrics) {
         return (
             <ContentLayout title="Dashboard">
@@ -252,68 +267,41 @@ export default function DashboardPage() {
                         </div>
                     )}
 
-                    {/* Transaction Analysis and Recent Activity */}
-                    {metrics && (
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-                            {/* Transaction Type Distribution */}
-                            <Card className="col-span-4">
-                                <CardHeader>
-                                    <CardTitle>Transaction Distribution</CardTitle>
-                                    <CardDescription>
-                                        Breakdown by transaction type
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    {Object.keys(metrics.transactionsByType).length > 0 ? (
-                                        <div className="space-y-4">
-                                            {Object.entries(metrics.transactionsByType).map(([type, count]) => (
-                                                <div key={type} className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="h-2 w-2 rounded-full bg-primary" />
-                                                        <span className="text-sm font-medium capitalize">{type}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-4">
-                                                        <span className="text-sm text-muted-foreground">
-                                                            {count} transaction{count !== 1 ? 's' : ''}
-                                                        </span>
-                                                        <span className="text-sm font-semibold">
-                                                            {((count / metrics.totalTransactions) * 100).toFixed(1)}%
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            <div className="pt-4 text-sm text-muted-foreground">
-                                                <p>Chart visualization coming soon - Install recharts for charts</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <p className="text-muted-foreground text-center py-8">
-                                            No transaction data available
-                                        </p>
-                                    )}
-                                </CardContent>
-                            </Card>
+                    {/* Charts Row */}
+                    {chartData.length > 0 && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {/* Bar Chart */}
+                            <TransactionChart
+                                data={chartData}
+                                totalTransactions={metrics?.totalTransactions ?? 0}
+                            />
 
-                            {/* Recent Transactions Summary */}
-                            <Card className="col-span-3">
-                                <CardHeader>
-                                    <CardTitle>Recent Transactions</CardTitle>
-                                    <CardDescription>
-                                        Latest transactions
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    {transactions.length > 0 ? (
-                                        <RecentTransactionsList transactions={transactions.slice(0, 5)} />
-                                    ) : (
-                                        <p className="text-muted-foreground text-center py-8">
-                                            No recent transactions
-                                        </p>
-                                    )}
-                                </CardContent>
-                            </Card>
+                            {/* Donut Chart */}
+                            <TransactionPieChart
+                                data={chartData}
+                                totalTransactions={metrics?.totalTransactions ?? 0}
+                            />
                         </div>
                     )}
+
+                    {/* Recent Transactions Summary */}
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Recent Transactions</CardTitle>
+                            <CardDescription>
+                                Latest transactions
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {transactions.length > 0 ? (
+                                <RecentTransactionsList transactions={transactions.slice(0, 5)} />
+                            ) : (
+                                <p className="text-muted-foreground text-center py-8">
+                                    No recent transactions
+                                </p>
+                            )}
+                        </CardContent>
+                    </Card>
 
                     {/* Recent Transactions Table */}
                     <Card>
