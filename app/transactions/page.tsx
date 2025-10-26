@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import axios from "axios";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
 import { ContentLayout } from "@/components/admin-panel/content-layout";
 import {
     Breadcrumb,
@@ -20,13 +23,32 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import {
+    Form,
+    FormControl,
+    FormDescription,
+    FormField,
+    FormItem,
+    FormLabel,
+    FormMessage,
+} from "@/components/ui/form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, Pencil, Trash2, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-// TypeScript interfaces based on your API response
+// TypeScript interfaces
 interface Transaction {
     id: number;
     transaction_reference: string;
@@ -64,7 +86,24 @@ interface TransactionsResponse {
     timestamp: string;
 }
 
-// Helper function to format currency
+interface UpdateTransactionResponse {
+    success: boolean;
+    data: Transaction;
+    message: string;
+    timestamp: string;
+}
+
+// Update Transaction Schema
+const updateTransactionSchema = z.object({
+    description: z.string().min(10, { message: "Description must be at least 10 characters." }),
+    amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: "Amount must be a valid number with up to 2 decimal places." }),
+    external_fee: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: "Fee must be a valid number with up to 2 decimal places." }),
+    total_amount: z.string().regex(/^\d+(\.\d{1,2})?$/, { message: "Total must be a valid number with up to 2 decimal places." }),
+});
+
+type UpdateTransactionValues = z.infer<typeof updateTransactionSchema>;
+
+// Helper functions
 const formatCurrency = (amount: number, currencyCode: string) => {
     return new Intl.NumberFormat('en-US', {
         style: 'currency',
@@ -72,7 +111,6 @@ const formatCurrency = (amount: number, currencyCode: string) => {
     }).format(amount);
 };
 
-// Helper function to format datetime
 const formatDateTime = (datetime: string) => {
     return new Date(datetime).toLocaleString('en-US', {
         year: 'numeric',
@@ -93,6 +131,24 @@ export default function TransactionsPage() {
         offset: 0,
     });
 
+    // Edit dialog state
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+    const [updating, setUpdating] = useState(false);
+
+    // Form for editing
+    const form = useForm<UpdateTransactionValues>({
+        resolver: zodResolver(updateTransactionSchema),
+        defaultValues: {
+            description: "",
+            amount: "",
+            external_fee: "",
+            total_amount: "",
+        },
+    });
+
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8090/api/v1';
+
     // Fetch transactions from API
     const fetchTransactions = async (limit: number = 7, offset: number = 0) => {
         setLoading(true);
@@ -100,15 +156,10 @@ export default function TransactionsPage() {
 
         try {
             const response = await axios.get<TransactionsResponse>(
-                `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8090/api/v1'}/transactions`,
+                `${API_BASE_URL}/transactions`,
                 {
-                    params: {
-                        limit,
-                        offset,
-                    },
-                    headers: {
-                        'X-Request-ID': crypto.randomUUID(),
-                    },
+                    params: { limit, offset },
+                    headers: { 'X-Request-ID': crypto.randomUUID() },
                 }
             );
 
@@ -122,7 +173,7 @@ export default function TransactionsPage() {
             const errorMessage = axios.isAxiosError(err)
                 ? err.response?.data?.message || err.message
                 : 'An unexpected error occurred';
-            
+
             setError(errorMessage);
             toast.error(`Error: ${errorMessage}`);
         } finally {
@@ -130,7 +181,79 @@ export default function TransactionsPage() {
         }
     };
 
-    // Initial fetch on component mount
+    // Update transaction
+    const updateTransaction = async (id: number, data: UpdateTransactionValues) => {
+        setUpdating(true);
+
+        try {
+            const response = await axios.put<UpdateTransactionResponse>(
+                `${API_BASE_URL}/transactions/${id}`,
+                {
+                    description: data.description,
+                    amount: parseFloat(data.amount),
+                    external_fee: parseFloat(data.external_fee),
+                    total_amount: parseFloat(data.total_amount),
+                },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Request-ID': crypto.randomUUID(),
+                    },
+                }
+            );
+
+            if (response.data.success) {
+                toast.success('Transaction updated successfully!');
+
+                // Update the transaction in the local state
+                setTransactions(prev =>
+                    prev.map(t => t.id === id ? response.data.data : t)
+                );
+
+                setEditDialogOpen(false);
+                setSelectedTransaction(null);
+                form.reset();
+            } else {
+                throw new Error(response.data.message || 'Failed to update transaction');
+            }
+        } catch (err) {
+            const errorMessage = axios.isAxiosError(err)
+                ? err.response?.data?.message || err.message
+                : 'An unexpected error occurred';
+
+            toast.error(`Update failed: ${errorMessage}`);
+        } finally {
+            setUpdating(false);
+        }
+    };
+
+    // Open edit dialog
+    const handleEdit = (transaction: Transaction) => {
+        setSelectedTransaction(transaction);
+        form.reset({
+            description: transaction.description,
+            amount: transaction.amount.toString(),
+            external_fee: transaction.external_fee.toString(),
+            total_amount: transaction.total_amount.toString(),
+        });
+        setEditDialogOpen(true);
+    };
+
+    // Handle form submission
+    const onSubmit = async (data: UpdateTransactionValues) => {
+        if (selectedTransaction) {
+            await updateTransaction(selectedTransaction.id, data);
+        }
+    };
+
+    // Auto-calculate total when amount or fee changes
+    const calculateTotal = () => {
+        const amount = parseFloat(form.watch("amount") || "0");
+        const fee = parseFloat(form.watch("external_fee") || "0");
+        const total = (amount + fee).toFixed(2);
+        form.setValue("total_amount", total);
+    };
+
     useEffect(() => {
         fetchTransactions(meta.limit, meta.offset);
     }, []);
@@ -150,13 +273,11 @@ export default function TransactionsPage() {
         fetchTransactions(meta.limit, newOffset);
     };
 
-    // Calculate current page info
     const currentPage = Math.floor(meta.offset / meta.limit) + 1;
     const totalPages = Math.ceil(meta.total / meta.limit);
     const showingFrom = meta.offset + 1;
     const showingTo = Math.min(meta.offset + meta.limit, meta.total);
 
-    // Calculate total amount for current page
     const calculateTotalAmount = () => {
         return transactions.reduce((sum, t) => sum + t.total_amount, 0);
     };
@@ -245,12 +366,8 @@ export default function TransactionsPage() {
                                     <TableBody>
                                         {transactions.map((transaction) => (
                                             <TableRow key={transaction.id}>
-                                                <TableCell className="font-medium">
-                                                    {transaction.id}
-                                                </TableCell>
-                                                <TableCell className="font-mono text-xs">
-                                                    {transaction.transaction_reference}
-                                                </TableCell>
+                                                <TableCell className="font-medium">{transaction.id}</TableCell>
+                                                <TableCell className="font-mono text-xs">{transaction.transaction_reference}</TableCell>
                                                 <TableCell>
                                                     <Badge variant="outline" className="capitalize">
                                                         {transaction.transaction_type.toLowerCase()}
@@ -258,28 +375,16 @@ export default function TransactionsPage() {
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex flex-col">
-                                                        <span className="font-medium text-sm">
-                                                            {transaction.payer_account_name}
-                                                        </span>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {transaction.payer_bank_name}
-                                                        </span>
-                                                        <span className="text-xs text-muted-foreground font-mono">
-                                                            {transaction.payer_account_number}
-                                                        </span>
+                                                        <span className="font-medium text-sm">{transaction.payer_account_name}</span>
+                                                        <span className="text-xs text-muted-foreground">{transaction.payer_bank_name}</span>
+                                                        <span className="text-xs text-muted-foreground font-mono">{transaction.payer_account_number}</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex flex-col">
-                                                        <span className="font-medium text-sm">
-                                                            {transaction.recipient_account_name}
-                                                        </span>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {transaction.recipient_bank_name}
-                                                        </span>
-                                                        <span className="text-xs text-muted-foreground font-mono">
-                                                            {transaction.recipient_account_number}
-                                                        </span>
+                                                        <span className="font-medium text-sm">{transaction.recipient_account_name}</span>
+                                                        <span className="text-xs text-muted-foreground">{transaction.recipient_bank_name}</span>
+                                                        <span className="text-xs text-muted-foreground font-mono">{transaction.recipient_account_number}</span>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell className="text-right font-medium">
@@ -291,24 +396,15 @@ export default function TransactionsPage() {
                                                 <TableCell className="text-right font-bold">
                                                     {formatCurrency(transaction.total_amount, transaction.currency_code)}
                                                 </TableCell>
-                                                <TableCell className="text-sm">
-                                                    {formatDateTime(transaction.transaction_datetime)}
-                                                </TableCell>
+                                                <TableCell className="text-sm">{formatDateTime(transaction.transaction_datetime)}</TableCell>
                                                 <TableCell>
-                                                    <Badge
-                                                        variant={transaction.is_active ? "default" : "secondary"}
-                                                    >
+                                                    <Badge variant={transaction.is_active ? "default" : "secondary"}>
                                                         {transaction.is_active ? "Active" : "Inactive"}
                                                     </Badge>
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <div className="flex justify-end gap-2">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8"
-                                                            title="View Details"
-                                                        >
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8" title="View Details">
                                                             <Eye className="h-4 w-4" />
                                                         </Button>
                                                         <Button
@@ -316,15 +412,11 @@ export default function TransactionsPage() {
                                                             size="icon"
                                                             className="h-8 w-8"
                                                             title="Edit"
+                                                            onClick={() => handleEdit(transaction)}
                                                         >
                                                             <Pencil className="h-4 w-4" />
                                                         </Button>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 text-destructive"
-                                                            title="Delete"
-                                                        >
+                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Delete">
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
                                                     </div>
@@ -338,31 +430,16 @@ export default function TransactionsPage() {
                             {/* Summary and Pagination */}
                             <div className="flex items-center justify-between mt-4">
                                 <div className="text-sm text-muted-foreground">
-                                    <p>
-                                        Showing {showingFrom} to {showingTo} of {meta.total} transactions 
-                                        (Page {currentPage} of {totalPages})
-                                    </p>
+                                    <p>Showing {showingFrom} to {showingTo} of {meta.total} transactions (Page {currentPage} of {totalPages})</p>
                                     <p className="mt-1">
-                                        Page Total: <span className="font-semibold">
-                                            {formatCurrency(calculateTotalAmount(), "USD")}
-                                        </span>
+                                        Page Total: <span className="font-semibold">{formatCurrency(calculateTotalAmount(), "USD")}</span>
                                     </p>
                                 </div>
                                 <div className="flex gap-2">
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
-                                        onClick={handlePreviousPage}
-                                        disabled={meta.offset === 0 || loading}
-                                    >
+                                    <Button variant="outline" size="sm" onClick={handlePreviousPage} disabled={meta.offset === 0 || loading}>
                                         Previous
                                     </Button>
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
-                                        onClick={handleNextPage}
-                                        disabled={meta.offset + meta.limit >= meta.total || loading}
-                                    >
+                                    <Button variant="outline" size="sm" onClick={handleNextPage} disabled={meta.offset + meta.limit >= meta.total || loading}>
                                         Next
                                     </Button>
                                 </div>
@@ -371,6 +448,135 @@ export default function TransactionsPage() {
                     )}
                 </CardContent>
             </Card>
+
+            {/* Edit Transaction Dialog */}
+            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+                <DialogContent className="sm:max-w-[525px]">
+                    <DialogHeader>
+                        <DialogTitle>Edit Transaction</DialogTitle>
+                        <DialogDescription>
+                            Update transaction details. Click save when you're done.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <Form {...form}>
+                        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                            {selectedTransaction && (
+                                <div className="space-y-2 p-3 bg-muted rounded-md">
+                                    <p className="text-sm font-medium">Transaction: {selectedTransaction.transaction_reference}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        {selectedTransaction.payer_account_name} → {selectedTransaction.recipient_account_name}
+                                    </p>
+                                </div>
+                            )}
+
+                            <FormField
+                                control={form.control}
+                                name="description"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Description</FormLabel>
+                                        <FormControl>
+                                            <Textarea
+                                                placeholder="Payment description"
+                                                className="resize-none"
+                                                rows={3}
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <FormField
+                                    control={form.control}
+                                    name="amount"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Amount</FormLabel>
+                                            <FormControl>
+                                                <Input
+                                                    type="text"
+                                                    placeholder="1000.00"
+                                                    {...field}
+                                                    onChange={(e) => {
+                                                        field.onChange(e);
+                                                        calculateTotal();
+                                                    }}
+                                                />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name="external_fee"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Fee</FormLabel>
+                                            <FormControl>
+                                                <Input
+                                                    type="text"
+                                                    placeholder="5.00"
+                                                    {...field}
+                                                    onChange={(e) => {
+                                                        field.onChange(e);
+                                                        calculateTotal();
+                                                    }}
+                                                />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+
+                            <FormField
+                                control={form.control}
+                                name="total_amount"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Total Amount</FormLabel>
+                                        <FormControl>
+                                            <Input
+                                                type="text"
+                                                placeholder="1005.00"
+                                                {...field}
+                                                disabled
+                                            />
+                                        </FormControl>
+                                        <FormDescription>
+                                            Auto-calculated from amount + fee
+                                        </FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+
+                            <DialogFooter>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => {
+                                        setEditDialogOpen(false);
+                                        form.reset();
+                                    }}
+                                    disabled={updating}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button type="submit" disabled={updating}>
+                                    {updating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    Save Changes
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </Form>
+                </DialogContent>
+            </Dialog>
         </ContentLayout>
     );
 }
