@@ -66,6 +66,9 @@ import {
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
+import { UploadPaymentDialog } from "@/components/transaction/upload-payment-dialog";
+import { Upload } from "lucide-react";
+
 
 
 // TypeScript interfaces
@@ -438,12 +441,20 @@ export default function TransactionsPage() {
                                 View and manage all financial transactions
                             </CardDescription>
                         </div>
-                        <Button asChild>
-                            <Link href="/transactions/new">
-                                <Plus className="mr-2 h-4 w-4" />
-                                New Transaction
-                            </Link>
-                        </Button>
+                        <div className="flex gap-2">
+                            <UploadPaymentDialog>
+                                <Button variant="outline">
+                                    <Upload className="mr-2 h-4 w-4" />
+                                    Upload Payment
+                                </Button>
+                            </UploadPaymentDialog>
+                            <Button asChild>
+                                <Link href="/transactions/new">
+                                    <Plus className="mr-2 h-4 w-4" />
+                                    New Transaction
+                                </Link>
+                            </Button>
+                        </div>
                     </div>
                 </CardHeader>
                 <CardContent>
@@ -747,7 +758,7 @@ export default function TransactionsPage() {
                         <AlertDialogAction
                             onClick={confirmDelete}
                             disabled={deleting}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            className="bg-destructive text-destructive-foreground text-amber-50 hover:bg-destructive/90"
                         >
                             {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Delete Transaction
