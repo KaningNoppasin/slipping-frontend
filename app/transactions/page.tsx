@@ -57,6 +57,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, Pencil, Trash2, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import {
+    Sheet,
+    SheetContent,
+    SheetDescription,
+    SheetHeader,
+    SheetTitle,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+
 
 // TypeScript interfaces
 interface Transaction {
@@ -155,7 +165,50 @@ export default function TransactionsPage() {
     // Delete dialog state
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+
+    // Add these state variables after your existing state declarations
+    const [viewDialogOpen, setViewDialogOpen] = useState(false);
+    const [viewingTransaction, setViewingTransaction] = useState<Transaction | null>(null);
+    const [loadingDetails, setLoadingDetails] = useState(false);
+
     const [deleting, setDeleting] = useState(false);
+
+    const fetchTransactionDetails = async (id: number) => {
+        setLoadingDetails(true);
+        try {
+            const response = await axios.get<{
+                success: boolean;
+                data: Transaction;
+                message: string;
+                timestamp: string;
+            }>(
+                `${API_BASE_URL}/transactions/${id}`,
+                {
+                    headers: { 'X-Request-ID': crypto.randomUUID() },
+                }
+            );
+
+            if (response.data.success) {
+                setViewingTransaction(response.data.data);
+                setViewDialogOpen(true);
+            } else {
+                throw new Error(response.data.message || 'Failed to fetch transaction details');
+            }
+        } catch (err) {
+            const errorMessage = axios.isAxiosError(err)
+                ? err.response?.data?.message || err.message
+                : 'An unexpected error occurred';
+
+            toast.error(`Failed to load details: ${errorMessage}`);
+        } finally {
+            setLoadingDetails(false);
+        }
+    };
+
+    // Add this handler function
+    const handleView = (transaction: Transaction) => {
+        fetchTransactionDetails(transaction.id);
+    };
 
     // Form for editing
     const form = useForm<UpdateTransactionValues>({
@@ -476,8 +529,19 @@ export default function TransactionsPage() {
                                                 </TableCell>
                                                 <TableCell className="text-right">
                                                     <div className="flex justify-end gap-2">
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8" title="View Details">
-                                                            <Eye className="h-4 w-4" />
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8"
+                                                            title="View Details"
+                                                            onClick={() => handleView(transaction)}
+                                                            disabled={loadingDetails}
+                                                        >
+                                                            {loadingDetails ? (
+                                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                            ) : (
+                                                                <Eye className="h-4 w-4" />
+                                                            )}
                                                         </Button>
                                                         <Button
                                                             variant="ghost"
@@ -691,6 +755,283 @@ export default function TransactionsPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            {/* View Transaction Details Sheet */}
+            <Sheet open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+                <SheetContent className="overflow-y-auto sm:max-w-xl">
+                    <SheetHeader>
+                        <SheetTitle>Transaction Details</SheetTitle>
+                        <SheetDescription>
+                            Complete information about this transaction
+                        </SheetDescription>
+                    </SheetHeader>
+
+                    {viewingTransaction && (
+                        <div className="grid flex-1 auto-rows-min gap-6 py-6 px-3">
+                            {/* Transaction Reference and Status */}
+                            <div className="grid gap-3">
+                                <Label htmlFor="transaction-ref">Transaction Reference</Label>
+                                <div className="flex items-center gap-2">
+                                    <Input
+                                        id="transaction-ref"
+                                        value={viewingTransaction.transaction_reference}
+                                        readOnly
+                                        className="font-mono"
+                                    />
+                                    <Badge variant={viewingTransaction.is_active ? "default" : "secondary"}>
+                                        {viewingTransaction.is_active ? "Active" : "Inactive"}
+                                    </Badge>
+                                </div>
+                            </div>
+
+                            {/* Description */}
+                            <div className="grid gap-3">
+                                <Label htmlFor="description">Description</Label>
+                                <Textarea
+                                    id="description"
+                                    value={viewingTransaction.description}
+                                    readOnly
+                                    rows={3}
+                                />
+                            </div>
+
+                            <Separator />
+
+                            {/* Transaction Type and Currency */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="grid gap-3">
+                                    <Label htmlFor="transaction-type">Type</Label>
+                                    <Input
+                                        id="transaction-type"
+                                        value={viewingTransaction.transaction_type}
+                                        readOnly
+                                        className="capitalize"
+                                    />
+                                </div>
+                                <div className="grid gap-3">
+                                    <Label htmlFor="currency">Currency</Label>
+                                    <Input
+                                        id="currency"
+                                        value={viewingTransaction.currency_code}
+                                        readOnly
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Amount Breakdown */}
+                            <div className="grid gap-3">
+                                <Label>Amount Breakdown</Label>
+                                <div className="space-y-2 bg-muted p-4 rounded-lg">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm">Amount</span>
+                                        <span className="font-medium">
+                                            {formatCurrency(viewingTransaction.amount, viewingTransaction.currency_code)}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm">External Fee</span>
+                                        <span className="font-medium">
+                                            {formatCurrency(viewingTransaction.external_fee, viewingTransaction.currency_code)}
+                                        </span>
+                                    </div>
+                                    <Separator />
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-sm font-semibold">Total Amount</span>
+                                        <span className="font-bold text-lg">
+                                            {formatCurrency(viewingTransaction.total_amount, viewingTransaction.currency_code)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* Payer Information */}
+                            <div className="grid gap-3">
+                                <Label className="text-base font-semibold">Payer Information</Label>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="payer-name">Account Name</Label>
+                                    <Input
+                                        id="payer-name"
+                                        value={viewingTransaction.payer_account_name}
+                                        readOnly
+                                    />
+                                </div>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="payer-account">Account Number</Label>
+                                    <Input
+                                        id="payer-account"
+                                        value={viewingTransaction.payer_account_number}
+                                        readOnly
+                                        className="font-mono"
+                                    />
+                                </div>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="payer-bank">Bank Name</Label>
+                                    <Input
+                                        id="payer-bank"
+                                        value={viewingTransaction.payer_bank_name}
+                                        readOnly
+                                    />
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* Recipient Information */}
+                            <div className="grid gap-3">
+                                <Label className="text-base font-semibold">Recipient Information</Label>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="recipient-name">Account Name</Label>
+                                    <Input
+                                        id="recipient-name"
+                                        value={viewingTransaction.recipient_account_name}
+                                        readOnly
+                                    />
+                                </div>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="recipient-account">Account Number</Label>
+                                    <Input
+                                        id="recipient-account"
+                                        value={viewingTransaction.recipient_account_number}
+                                        readOnly
+                                        className="font-mono"
+                                    />
+                                </div>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="recipient-bank">Bank Name</Label>
+                                    <Input
+                                        id="recipient-bank"
+                                        value={viewingTransaction.recipient_bank_name}
+                                        readOnly
+                                    />
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* System Information */}
+                            <div className="grid gap-3">
+                                <Label className="text-base font-semibold">System Information</Label>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="request-id">Request ID</Label>
+                                    <Input
+                                        id="request-id"
+                                        value={viewingTransaction.request_id}
+                                        readOnly
+                                        className="font-mono text-xs"
+                                    />
+                                </div>
+
+                                <div className="grid gap-3">
+                                    <Label htmlFor="correlation-id">Correlation ID</Label>
+                                    <Input
+                                        id="correlation-id"
+                                        value={viewingTransaction.correlation_id}
+                                        readOnly
+                                        className="font-mono text-xs"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-3">
+                                        <Label htmlFor="transaction-date">Transaction Date</Label>
+                                        <Input
+                                            id="transaction-date"
+                                            value={formatDateTime(viewingTransaction.transaction_datetime)}
+                                            readOnly
+                                            className="text-sm"
+                                        />
+                                    </div>
+                                    <div className="grid gap-3">
+                                        <Label htmlFor="initiated-by">Initiated By</Label>
+                                        <Input
+                                            id="initiated-by"
+                                            value={`User #${viewingTransaction.initiated_by_user_id}`}
+                                            readOnly
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            {/* Audit Trail */}
+                            <div className="grid gap-3">
+                                <Label className="text-base font-semibold">Audit Trail</Label>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-3">
+                                        <Label htmlFor="created-at">Created At</Label>
+                                        <Input
+                                            id="created-at"
+                                            value={formatDateTime(viewingTransaction.created_at)}
+                                            readOnly
+                                            className="text-sm"
+                                        />
+                                    </div>
+                                    <div className="grid gap-3">
+                                        <Label htmlFor="updated-at">Last Updated</Label>
+                                        <Input
+                                            id="updated-at"
+                                            value={formatDateTime(viewingTransaction.updated_at)}
+                                            readOnly
+                                            className="text-sm"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {viewingTransaction.image_path && (
+                                <>
+                                    <Separator />
+                                    <div className="grid gap-3">
+                                        <Label htmlFor="image-path">Receipt Image</Label>
+                                        <Input
+                                            id="image-path"
+                                            value={viewingTransaction.image_path}
+                                            readOnly
+                                            className="font-mono text-sm"
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="grid grid-cols-2 gap-4 pt-4">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        setViewDialogOpen(false);
+                                        handleEdit(viewingTransaction);
+                                    }}
+                                >
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    onClick={() => {
+                                        setViewDialogOpen(false);
+                                        handleDelete(viewingTransaction);
+                                    }}
+                                >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </SheetContent>
+            </Sheet>
+
+
         </ContentLayout>
     );
 }
