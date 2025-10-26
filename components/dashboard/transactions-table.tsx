@@ -1,40 +1,70 @@
-
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Eye } from "lucide-react";
 
-export function TransactionsTable() {
-    const transactions = [
-        { id: "TRX001", customer: "John Doe", status: "completed", amount: "$250.00", date: "2025-10-25" },
-        { id: "TRX002", customer: "Jane Smith", status: "pending", amount: "$150.00", date: "2025-10-24" },
-        { id: "TRX003", customer: "Bob Johnson", status: "completed", amount: "$350.00", date: "2025-10-23" },
-        { id: "TRX004", customer: "Alice Brown", status: "failed", amount: "$450.00", date: "2025-10-22" },
-        { id: "TRX005", customer: "Charlie Wilson", status: "completed", amount: "$550.00", date: "2025-10-21" }
-    ];
+interface Transaction {
+    id: number;
+    transaction_reference: string;
+    transaction_type: string;
+    amount: number;
+    total_amount: number;
+    currency_code: string;
+    payer_account_name: string;
+    recipient_account_name: string;
+    transaction_datetime: string;
+    is_active: boolean;
+}
+
+export function TransactionsTable({ transactions }: { transactions: Transaction[] }) {
+    const formatCurrency = (amount: number, code: string) => {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: code,
+        }).format(amount);
+    };
+
+    const formatDate = (datetime: string) => {
+        return new Date(datetime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
 
     return (
         <div className="space-y-4">
             {transactions.map((transaction) => (
-                <div
-                    key={transaction.id}
+                <div 
+                    key={transaction.id} 
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent transition-colors"
                 >
-                    <div className="flex items-center gap-4">
-                        <div>
-                            <p className="text-sm font-medium">{transaction.id}</p>
-                            <p className="text-sm text-muted-foreground">{transaction.customer}</p>
+                    <div className="flex items-center gap-4 flex-1">
+                        <div className="font-mono text-xs text-muted-foreground">
+                            #{transaction.id}
+                        </div>
+                        <div className="flex-1">
+                            <p className="text-sm font-medium">{transaction.transaction_reference}</p>
+                            <p className="text-xs text-muted-foreground">
+                                {transaction.payer_account_name} → {transaction.recipient_account_name}
+                            </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
-                        <Badge
-                            variant={
-                                transaction.status === "completed" ? "default" :
-                                    transaction.status === "pending" ? "secondary" :
-                                        "destructive"
-                            }
-                        >
-                            {transaction.status}
+                        <Badge variant="outline" className="capitalize">
+                            {transaction.transaction_type}
                         </Badge>
-                        <p className="text-sm font-medium w-24 text-right">{transaction.amount}</p>
-                        <p className="text-sm text-muted-foreground w-24 text-right">{transaction.date}</p>
+                        <div className="text-right min-w-[100px]">
+                            <p className="text-sm font-medium">
+                                {formatCurrency(transaction.total_amount, transaction.currency_code)}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                                {formatDate(transaction.transaction_datetime)}
+                            </p>
+                        </div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Eye className="h-4 w-4" />
+                        </Button>
                     </div>
                 </div>
             ))}
