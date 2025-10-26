@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
+import axios from "axios";
 import { ContentLayout } from "@/components/admin-panel/content-layout";
 import {
     Breadcrumb,
@@ -34,8 +37,40 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
-// Define form schema with Zod based on your Transaction schema
+// TypeScript interfaces
+interface CreateTransactionResponse {
+    success: boolean;
+    data: {
+        id: number;
+        transaction_reference: string;
+        transaction_type: string;
+        currency_code: string;
+        amount: number;
+        external_fee: number;
+        total_amount: number;
+        transaction_datetime: string;
+        description: string;
+        image_path: string;
+        initiated_by_user_id: number;
+        payer_account_number: string;
+        payer_account_name: string;
+        payer_bank_name: string;
+        recipient_account_number: string;
+        recipient_account_name: string;
+        recipient_bank_name: string;
+        request_id: string;
+        correlation_id: string;
+        is_active: boolean;
+        created_at: string;
+        updated_at: string;
+    };
+    message: string;
+    timestamp: string;
+}
+
+// Define form schema with Zod
 const transactionFormSchema = z.object({
     transaction_reference: z
         .string()
@@ -61,7 +96,7 @@ const transactionFormSchema = z.object({
         .string()
         .min(10, { message: "Description must be at least 10 characters." })
         .max(500, { message: "Description must not exceed 500 characters." }),
-    
+
     // Payer Information
     payer_account_number: z
         .string()
@@ -75,7 +110,7 @@ const transactionFormSchema = z.object({
         .string()
         .min(2, { message: "Payer bank name must be at least 2 characters." })
         .max(200, { message: "Bank name must not exceed 200 characters." }),
-    
+
     // Recipient Information
     recipient_account_number: z
         .string()
@@ -89,17 +124,7 @@ const transactionFormSchema = z.object({
         .string()
         .min(2, { message: "Recipient bank name must be at least 2 characters." })
         .max(200, { message: "Bank name must not exceed 200 characters." }),
-    
-    // System fields
-    request_id: z
-        .string()
-        .min(1, { message: "Request ID is required." })
-        .max(100, { message: "Request ID must not exceed 100 characters." }),
-    correlation_id: z
-        .string()
-        .min(1, { message: "Correlation ID is required." })
-        .max(100, { message: "Correlation ID must not exceed 100 characters." }),
-    
+
     // Optional fields
     image_path: z
         .string()
@@ -112,7 +137,7 @@ type TransactionFormValues = z.infer<typeof transactionFormSchema>;
 // Default values
 const defaultValues: Partial<TransactionFormValues> = {
     transaction_reference: "",
-    transaction_type: "transfer",
+    transaction_type: "TRANSFER",
     currency_code: "",
     amount: "",
     external_fee: "0.00",
@@ -123,44 +148,95 @@ const defaultValues: Partial<TransactionFormValues> = {
     recipient_account_number: "",
     recipient_account_name: "",
     recipient_bank_name: "",
-    request_id: "",
-    correlation_id: "",
     image_path: "",
 };
 
 export default function NewTransactionPage() {
+    const router = useRouter();
+    const [submitting, setSubmitting] = useState(false);
+
     const form = useForm<TransactionFormValues>({
         resolver: zodResolver(transactionFormSchema),
         defaultValues,
         mode: "onChange",
     });
 
-    function onSubmit(data: TransactionFormValues) {
-        // Calculate total amount
-        const amount = parseFloat(data.amount);
-        const fee = parseFloat(data.external_fee || "0");
-        const totalAmount = amount + fee;
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8090/api/v1';
 
-        const transactionData = {
-            ...data,
-            amount: amount,
-            external_fee: fee,
-            total_amount: totalAmount,
-            transaction_datetime: new Date().toISOString(),
-            initiated_by_user_id: 1, // This should come from your auth context
-        };
+    async function onSubmit(data: TransactionFormValues) {
+        setSubmitting(true);
 
-        console.log("Transaction data:", transactionData);
-        toast.success("Transaction created successfully!");
-        // Here you would typically send the data to your API
-        // Example: await fetch('/api/transactions', { method: 'POST', body: JSON.stringify(transactionData) })
+        try {
+            // Calculate total amount
+            const amount = parseFloat(data.amount);
+            const fee = parseFloat(data.external_fee || "0");
+            const totalAmount = amount + fee;
+
+            // Prepare transaction data
+            const transactionData = {
+                transaction_reference: data.transaction_reference,
+                transaction_type: data.transaction_type,
+                currency_code: data.currency_code,
+                amount: amount,
+                external_fee: fee,
+                total_amount: totalAmount,
+                transaction_datetime: new Date().toISOString(),
+                description: data.description,
+                image_path: data.image_path || "/receipts/default.jpg",
+                initiated_by_user_id: 1, // TODO: Get from auth context
+                payer_account_number: data.payer_account_number,
+                payer_account_name: data.payer_account_name,
+                payer_bank_name: data.payer_bank_name,
+                recipient_account_number: data.recipient_account_number,
+                recipient_account_name: data.recipient_account_name,
+                recipient_bank_name: data.recipient_bank_name,
+            };
+
+            // Make POST request
+            const response = await axios.post<CreateTransactionResponse>(
+                `${API_BASE_URL}/transactions`,
+                transactionData,
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Request-ID': crypto.randomUUID(),
+                        'X-Correlation-ID': crypto.randomUUID(),
+                    },
+                }
+            );
+
+            if (response.status === 201 && response.data.success) {
+                toast.success(response.data.message || "Transaction created successfully!");
+
+                // Redirect to transactions list after 1 second
+                setTimeout(() => {
+                    router.push('/transactions');
+                }, 1000);
+            } else {
+                throw new Error(response.data.message || 'Failed to create transaction');
+            }
+        } catch (err) {
+            const errorMessage = axios.isAxiosError(err)
+                ? err.response?.data?.message || err.message
+                : 'An unexpected error occurred';
+
+            console.error('Transaction creation error:', err);
+            toast.error(`Failed to create transaction: ${errorMessage}`);
+        } finally {
+            setSubmitting(false);
+        }
     }
 
     // Auto-generate reference number
     const generateReference = () => {
         const timestamp = Date.now();
         const random = Math.floor(Math.random() * 1000);
-        return `TXN-${timestamp}-${random}`;
+        return `TXN-${timestamp}-${String(random).padStart(3, '0')}`;
+    };
+
+    // Auto-generate UUIDs
+    const generateUUID = () => {
+        return crypto.randomUUID();
     };
 
     // Calculate total amount
@@ -227,6 +303,7 @@ export default function NewTransactionPage() {
                                                     type="button"
                                                     variant="outline"
                                                     onClick={() => field.onChange(generateReference())}
+                                                    disabled={submitting}
                                                 >
                                                     Generate
                                                 </Button>
@@ -248,6 +325,7 @@ export default function NewTransactionPage() {
                                             <Select
                                                 onValueChange={field.onChange}
                                                 defaultValue={field.value}
+                                                disabled={submitting}
                                             >
                                                 <FormControl>
                                                     <SelectTrigger>
@@ -255,11 +333,11 @@ export default function NewTransactionPage() {
                                                     </SelectTrigger>
                                                 </FormControl>
                                                 <SelectContent>
-                                                    <SelectItem value="transfer">Transfer</SelectItem>
-                                                    <SelectItem value="payment">Payment</SelectItem>
-                                                    <SelectItem value="refund">Refund</SelectItem>
-                                                    <SelectItem value="withdrawal">Withdrawal</SelectItem>
-                                                    <SelectItem value="deposit">Deposit</SelectItem>
+                                                    <SelectItem value="TRANSFER">Transfer</SelectItem>
+                                                    <SelectItem value="PAYMENT">Payment</SelectItem>
+                                                    <SelectItem value="REFUND">Refund</SelectItem>
+                                                    <SelectItem value="WITHDRAWAL">Withdrawal</SelectItem>
+                                                    <SelectItem value="DEPOSIT">Deposit</SelectItem>
                                                 </SelectContent>
                                             </Select>
                                             <FormMessage />
@@ -281,6 +359,7 @@ export default function NewTransactionPage() {
                                                     type="text"
                                                     placeholder="1000.00"
                                                     {...field}
+                                                    disabled={submitting}
                                                 />
                                             </FormControl>
                                             <FormDescription>
@@ -302,6 +381,7 @@ export default function NewTransactionPage() {
                                                     type="text"
                                                     placeholder="5.00"
                                                     {...field}
+                                                    disabled={submitting}
                                                 />
                                             </FormControl>
                                             <FormDescription>
@@ -321,6 +401,7 @@ export default function NewTransactionPage() {
                                             <Select
                                                 onValueChange={field.onChange}
                                                 defaultValue={field.value}
+                                                disabled={submitting}
                                             >
                                                 <FormControl>
                                                     <SelectTrigger>
@@ -364,6 +445,7 @@ export default function NewTransactionPage() {
                                                 className="resize-none"
                                                 rows={3}
                                                 {...field}
+                                                disabled={submitting}
                                             />
                                         </FormControl>
                                         <FormDescription>
@@ -385,7 +467,7 @@ export default function NewTransactionPage() {
                                             <FormItem>
                                                 <FormLabel>Account Number</FormLabel>
                                                 <FormControl>
-                                                    <Input placeholder="1234567890" {...field} />
+                                                    <Input placeholder="1234567890" {...field} disabled={submitting} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
@@ -399,7 +481,7 @@ export default function NewTransactionPage() {
                                             <FormItem>
                                                 <FormLabel>Account Name</FormLabel>
                                                 <FormControl>
-                                                    <Input placeholder="John Doe" {...field} />
+                                                    <Input placeholder="John Doe" {...field} disabled={submitting} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
@@ -413,7 +495,7 @@ export default function NewTransactionPage() {
                                             <FormItem>
                                                 <FormLabel>Bank Name</FormLabel>
                                                 <FormControl>
-                                                    <Input placeholder="Bank of America" {...field} />
+                                                    <Input placeholder="Bank of America" {...field} disabled={submitting} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
@@ -433,7 +515,7 @@ export default function NewTransactionPage() {
                                             <FormItem>
                                                 <FormLabel>Account Number</FormLabel>
                                                 <FormControl>
-                                                    <Input placeholder="0987654321" {...field} />
+                                                    <Input placeholder="0987654321" {...field} disabled={submitting} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
@@ -447,7 +529,7 @@ export default function NewTransactionPage() {
                                             <FormItem>
                                                 <FormLabel>Account Name</FormLabel>
                                                 <FormControl>
-                                                    <Input placeholder="Jane Smith" {...field} />
+                                                    <Input placeholder="Jane Smith" {...field} disabled={submitting} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
@@ -461,50 +543,13 @@ export default function NewTransactionPage() {
                                             <FormItem>
                                                 <FormLabel>Bank Name</FormLabel>
                                                 <FormControl>
-                                                    <Input placeholder="Chase Bank" {...field} />
+                                                    <Input placeholder="Chase Bank" {...field} disabled={submitting} />
                                                 </FormControl>
                                                 <FormMessage />
                                             </FormItem>
                                         )}
                                     />
                                 </div>
-                            </div>
-
-                            {/* System Tracking IDs */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <FormField
-                                    control={form.control}
-                                    name="request_id"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Request ID</FormLabel>
-                                            <FormControl>
-                                                <Input placeholder="REQ-001" {...field} />
-                                            </FormControl>
-                                            <FormDescription>
-                                                Cross-service reference ID
-                                            </FormDescription>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name="correlation_id"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Correlation ID</FormLabel>
-                                            <FormControl>
-                                                <Input placeholder="CORR-001" {...field} />
-                                            </FormControl>
-                                            <FormDescription>
-                                                System correlation identifier
-                                            </FormDescription>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
                             </div>
 
                             {/* Optional Image Path */}
@@ -518,6 +563,7 @@ export default function NewTransactionPage() {
                                             <Input
                                                 placeholder="/uploads/receipt.jpg"
                                                 {...field}
+                                                disabled={submitting}
                                             />
                                         </FormControl>
                                         <FormDescription>
@@ -530,8 +576,16 @@ export default function NewTransactionPage() {
 
                             {/* Form Actions */}
                             <div className="flex gap-4">
-                                <Button type="submit">Create Transaction</Button>
-                                <Button type="button" variant="outline" asChild>
+                                <Button type="submit" disabled={submitting}>
+                                    {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                    {submitting ? "Creating..." : "Create Transaction"}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    asChild
+                                    disabled={submitting}
+                                >
                                     <Link href="/transactions">Cancel</Link>
                                 </Button>
                             </div>
