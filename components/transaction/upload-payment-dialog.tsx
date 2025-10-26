@@ -31,7 +31,7 @@ export function UploadPaymentDialog({ children }: UploadPaymentDialogProps) {
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
 
-    const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8090/api/v1';
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_GATEWAY_BASE_URL || 'http://localhost:8080/api/v1';
     const MAX_SIZE = 300 * 1024 * 1024; // 300MB in bytes
 
     // Handle file drop
