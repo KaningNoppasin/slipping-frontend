@@ -32,6 +32,16 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
     Form,
     FormControl,
     FormDescription,
@@ -93,6 +103,12 @@ interface UpdateTransactionResponse {
     timestamp: string;
 }
 
+interface DeleteTransactionResponse {
+    success: boolean;
+    message: string;
+    timestamp: string;
+}
+
 // Update Transaction Schema
 const updateTransactionSchema = z.object({
     description: z.string().min(10, { message: "Description must be at least 10 characters." }),
@@ -135,6 +151,11 @@ export default function TransactionsPage() {
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
     const [updating, setUpdating] = useState(false);
+
+    // Delete dialog state
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // Form for editing
     const form = useForm<UpdateTransactionValues>({
@@ -205,7 +226,6 @@ export default function TransactionsPage() {
             if (response.data.success) {
                 toast.success('Transaction updated successfully!');
 
-                // Update the transaction in the local state
                 setTransactions(prev =>
                     prev.map(t => t.id === id ? response.data.data : t)
                 );
@@ -227,6 +247,45 @@ export default function TransactionsPage() {
         }
     };
 
+    // Delete transaction
+    const deleteTransaction = async (id: number) => {
+        setDeleting(true);
+
+        try {
+            const response = await axios.delete<DeleteTransactionResponse>(
+                `${API_BASE_URL}/transactions/${id}`,
+                {
+                    headers: {
+                        'X-Request-ID': crypto.randomUUID(),
+                    },
+                }
+            );
+
+            if (response.data.success) {
+                toast.success('Transaction deleted successfully!');
+
+                // Remove the transaction from local state
+                setTransactions(prev => prev.filter(t => t.id !== id));
+
+                // Update meta total count
+                setMeta(prev => ({ ...prev, total: prev.total - 1 }));
+
+                setDeleteDialogOpen(false);
+                setTransactionToDelete(null);
+            } else {
+                throw new Error(response.data.message || 'Failed to delete transaction');
+            }
+        } catch (err) {
+            const errorMessage = axios.isAxiosError(err)
+                ? err.response?.data?.message || err.message
+                : 'An unexpected error occurred';
+
+            toast.error(`Delete failed: ${errorMessage}`);
+        } finally {
+            setDeleting(false);
+        }
+    };
+
     // Open edit dialog
     const handleEdit = (transaction: Transaction) => {
         setSelectedTransaction(transaction);
@@ -239,6 +298,19 @@ export default function TransactionsPage() {
         setEditDialogOpen(true);
     };
 
+    // Open delete dialog
+    const handleDelete = (transaction: Transaction) => {
+        setTransactionToDelete(transaction);
+        setDeleteDialogOpen(true);
+    };
+
+    // Confirm delete
+    const confirmDelete = () => {
+        if (transactionToDelete) {
+            deleteTransaction(transactionToDelete.id);
+        }
+    };
+
     // Handle form submission
     const onSubmit = async (data: UpdateTransactionValues) => {
         if (selectedTransaction) {
@@ -246,7 +318,7 @@ export default function TransactionsPage() {
         }
     };
 
-    // Auto-calculate total when amount or fee changes
+    // Auto-calculate total
     const calculateTotal = () => {
         const amount = parseFloat(form.watch("amount") || "0");
         const fee = parseFloat(form.watch("external_fee") || "0");
@@ -416,7 +488,13 @@ export default function TransactionsPage() {
                                                         >
                                                             <Pencil className="h-4 w-4" />
                                                         </Button>
-                                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" title="Delete">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            className="h-8 w-8 text-destructive"
+                                                            title="Delete"
+                                                            onClick={() => handleDelete(transaction)}
+                                                        >
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
                                                     </div>
@@ -577,6 +655,42 @@ export default function TransactionsPage() {
                     </Form>
                 </DialogContent>
             </Dialog>
+
+            {/* Delete Confirmation Alert Dialog */}
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the transaction
+                            {transactionToDelete && (
+                                <span className="font-medium block mt-2">
+                                    "{transactionToDelete.transaction_reference}"
+                                </span>
+                            )}
+                            and remove it from our servers.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {transactionToDelete && (
+                        <div className="p-3 bg-muted rounded-md space-y-1 text-sm">
+                            <p><strong>Amount:</strong> {formatCurrency(transactionToDelete.total_amount, transactionToDelete.currency_code)}</p>
+                            <p><strong>From:</strong> {transactionToDelete.payer_account_name}</p>
+                            <p><strong>To:</strong> {transactionToDelete.recipient_account_name}</p>
+                        </div>
+                    )}
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmDelete}
+                            disabled={deleting}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Delete Transaction
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </ContentLayout>
     );
 }
