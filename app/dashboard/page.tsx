@@ -32,6 +32,18 @@ import { TransactionChart } from "@/components/dashboard/transaction-chart";
 import { TransactionPieChart } from "@/components/dashboard/transaction-pie-chart";
 import { toast } from "sonner";
 
+import { TransactionAreaChart } from "@/components/dashboard/transaction-area-chart";
+import { TransactionStackedAreaChart } from "@/components/dashboard/transaction-stacked-area-chart";
+import { TransactionAmountAreaChart } from "@/components/dashboard/transaction-amount-area-chart";
+import { TransactionTypeAreaChart } from "@/components/dashboard/transaction-type-area-chart";
+
+import { TransactionRecipientAreaChart } from "@/components/dashboard/transaction-recipient-area-chart";
+import { TransactionRecipientOverlayChart } from "@/components/dashboard/transaction-recipient-overlay-chart";
+
+import { TransactionRecipientBarChart } from "@/components/dashboard/transaction-recipient-bar-chart";
+import { TransactionRecipientBarLabeled } from "@/components/dashboard/transaction-recipient-bar-labeled";
+
+
 // TypeScript interfaces
 interface Transaction {
     id: number;
@@ -268,7 +280,7 @@ export default function DashboardPage() {
                     )}
 
                     {/* Charts Row */}
-                    {chartData.length > 0 && (
+                    {false && chartData.length > 0 && (
                         <div className="grid gap-4 md:grid-cols-2">
                             {/* Bar Chart */}
                             <TransactionChart
@@ -281,6 +293,68 @@ export default function DashboardPage() {
                                 data={chartData}
                                 totalTransactions={metrics?.totalTransactions ?? 0}
                             />
+                        </div>
+                    )}
+                    {/* Charts Row */}
+                    {false && chartData.length > 0 && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {/* Area Chart */}
+                            <TransactionAreaChart
+                                data={chartData}
+                                totalTransactions={metrics?.totalTransactions ?? 0}
+                            />
+
+                            {/* Stacked Area Chart */}
+                            <TransactionStackedAreaChart
+                                data={chartData}
+                                totalTransactions={metrics?.totalTransactions ?? 0}
+                            />
+                        </div>
+                    )}
+
+                    {/* Charts Row */}
+                    {false && transactions.length > 0 && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {/* Transaction Amount Area Chart */}
+                            <TransactionAmountAreaChart transactions={transactions} />
+
+                            {/* Transaction Type Comparison Area Chart */}
+                            <TransactionTypeAreaChart transactions={transactions} />
+                        </div>
+                    )}
+
+                    {/* Charts Row */}
+                    {false && transactions.length > 0 && (
+                        <div className="grid gap-4">
+                            {/* Transaction Amount Area Chart - Full Width */}
+                            <TransactionAmountAreaChart transactions={transactions} />
+                        </div>
+                    )}
+
+                    {false && transactions.length > 0 && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {/* Transaction Amount Area Chart */}
+                            <TransactionAmountAreaChart transactions={transactions} />
+
+                            {/* Transaction Recipient Area Chart */}
+                            <TransactionRecipientAreaChart transactions={transactions} />
+
+                            {/* OR use the overlay version */}
+                            {/* <TransactionRecipientOverlayChart transactions={transactions} /> */}
+                        </div>
+                    )}
+
+                    {/* Charts Row */}
+                    {transactions.length > 0 && (
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {/* Transaction Amount Area Chart */}
+                            <TransactionAmountAreaChart transactions={transactions} />
+
+                            {/* Transaction Recipient Horizontal Bar Chart */}
+                            <TransactionRecipientBarChart transactions={transactions} />
+
+                            {/* OR use the labeled version */}
+                            {/* <TransactionRecipientBarLabeled transactions={transactions} /> */}
                         </div>
                     )}
 
